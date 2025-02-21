@@ -1,5 +1,7 @@
 import argparse
 import os
+import nest_asyncio
+from pyngrok import ngrok
 
 parser = argparse.ArgumentParser(description="Run the TTS FastAPI server.")
 parser.add_argument("-p", "--port", type=int, default=int(os.environ.get("TTS_FASTAPI_PORT", 8000)),
@@ -24,11 +26,7 @@ if __name__ == "__main__":
 
 from RealtimeTTS import (
     TextToAudioStream,
-    AzureEngine,
-    ElevenlabsEngine,
-    SystemEngine,
     CoquiEngine,
-    OpenAIEngine,
 )
 
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
@@ -44,10 +42,6 @@ import wave
 import io
 
 SUPPORTED_ENGINES = [
-    "azure",
-    "openai",
-    "elevenlabs",
-    "system",
     "coqui",  # comment coqui out for tests where you need server start often
 ]
 
@@ -88,7 +82,7 @@ tts_lock = threading.Lock()
 gen_lock = threading.Lock()
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="/kaggle/working/RealtimeTTS/example_fast_api/static"), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -118,7 +112,7 @@ async def add_security_headers(request: Request, call_next):
 
 @app.get("/favicon.ico")
 async def favicon():
-    return FileResponse("static/favicon.ico")
+    return FileResponse("/kaggle/working/RealtimeTTS/example_fast_api/static/favicon.ico")
 
 
 def _set_engine(engine_name):
@@ -256,7 +250,7 @@ def tts(request: Request, text: str = Query(...)):
 def tts_text(request: Request, text: str = Query(...)):
     if "favicon.ico" in request.url.path:
         print("favicon requested")
-        return FileResponse("static/favicon.ico")
+        return FileResponse("/kaggle/working/RealtimeTTS/example_fast_api/static/favicon.ico")
 
     print(f"/tts_text route synthesizing text: {text}")
 
@@ -396,30 +390,10 @@ if __name__ == "__main__":
     print("Initializing TTS Engines")
 
     for engine_name in SUPPORTED_ENGINES:
-        if "azure" == engine_name:
-            azure_api_key = os.environ.get("AZURE_SPEECH_KEY")
-            azure_region = os.environ.get("AZURE_SPEECH_REGION")
-            if azure_api_key and azure_region:
-                print("Initializing azure engine")
-                engines["azure"] = AzureEngine(azure_api_key, azure_region)
-
-        if "elevenlabs" == engine_name:
-            elevenlabs_api_key = os.environ.get("ELEVENLABS_API_KEY")
-            if elevenlabs_api_key:
-                print("Initializing elevenlabs engine")
-                engines["elevenlabs"] = ElevenlabsEngine(elevenlabs_api_key)
-
-        if "system" == engine_name:
-            print("Initializing system engine")
-            engines["system"] = SystemEngine()
 
         if "coqui" == engine_name:
             print("Initializing coqui engine")
             engines["coqui"] = CoquiEngine()
-
-        if "openai" == engine_name:
-            print("Initializing openai engine")
-            engines["openai"] = OpenAIEngine()
 
 
     for _engine in engines.keys():
@@ -431,6 +405,10 @@ if __name__ == "__main__":
             logging.error(f"Error retrieving voices for {_engine}: {str(e)}")
 
     _set_engine(START_ENGINE)
+
+    ngrok_tunnel = ngrok.connect(8000)
+    print('Public URL:', ngrok_tunnel.public_url)
+    nest_asyncio.apply()
 
     print("Server ready")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
